@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>مواقيت الصلاة واتجاه القبلة</title>
+
+  <!-- خط عربي -->
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-polylinedecorator@1.7.0/dist/leaflet.polylineDecorator.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Cairo', sans-serif;
+      margin: 0;
+      background: linear-gradient(180deg, #f0f7f4, #ffffff);
+      color: #333;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e7f5c, #2fa37c);
+      color: #fff;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      border-bottom-left-radius: 30px;
+      border-bottom-right-radius: 30px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+
+    header h1 { margin: 0; font-size: 1.8rem; }
+    header p { margin: 0.5rem 0 0; opacity: 0.9; }
+
+    #map {
+      height: 280px;
+      margin: -40px 1rem 1rem;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+    }
+
+    .container {
+      padding: 0 1rem 1.5rem;
+    }
+
+    .card {
+      background: #fff;
+      padding: 1.2rem;
+      margin-bottom: 1rem;
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    .card h2 {
+      margin-top: 0;
+      color: #1e7f5c;
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 1rem;
+    }
+
+    th {
+      background: #f0f7f4;
+      color: #1e7f5c;
+      padding: 0.6rem;
+      border-radius: 10px;
+    }
+
+    td {
+      padding: 0.6rem;
+      border-bottom: 1px dashed #e0e0e0;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .qibla-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .qibla-icon {
+      font-size: 3rem;
+      color: #1e7f5c;
+      transform: rotate(0deg);
+      transition: transform 0.5s ease;
+    }
+
+    .qibla-text {
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #777;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>مواقيت الصلاة</h1>
+  <p>حسب موقعك الحالي مع اتجاه القبلة</p>
+</header>
+
+<div id="map"></div>
+
+<div class="container">
+
+  <div class="card">
+    <h2>🕌 مواقيت الصلاة</h2>
+    <table id="prayer-times">
+      <tr><th>الصلاة</th><th>الوقت</th></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>🧭 اتجاه القبلة</h2>
+    <div class="qibla-box">
+      <div class="qibla-icon" id="qibla-arrow">⬆️</div>
+      <div class="qibla-text" id="qibla-direction">جاري التحديد...</div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  🌙 جعلها الله في ميزان حسناتك
+</footer>
+
+<script>
+  const KAABA_LAT = 21.4225;
+  const KAABA_LNG = 39.8262;
+
+  function toRad(deg) { return deg * Math.PI / 180; }
+  function toDeg(rad) { return rad * 180 / Math.PI; }
+
+  function calculateQibla(lat, lng) {
+    const dLng = toRad(KAABA_LNG - lng);
+    const lat1 = toRad(lat);
+    const lat2 = toRad(KAABA_LAT);
+    const y = Math.sin(dLng);
+    const x = Math.cos(lat1) * Math.tan(lat2) - Math.sin(lat1) * Math.cos(dLng);
+    let brng = toDeg(Math.atan2(y, x));
+    return (brng + 360) % 360;
+  }
+
+  function loadPrayerTimes(lat, lng) {
+    const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lng}&method=4`;
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        const times = data.data.timings;
+        const table = document.getElementById('prayer-times');
+        table.innerHTML = '<tr><th>الصلاة</th><th>الوقت</th></tr>';
+        const prayers = {
+          Fajr: 'الفجر',
+          Dhuhr: 'الظهر',
+          Asr: 'العصر',
+          Maghrib: 'المغرب',
+          Isha: 'العشاء'
+        };
+        for (const key in prayers) {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td>${prayers[key]}</td><td>${times[key]}</td>`;
+          table.appendChild(row);
+        }
+      });
+  }
+
+  // ملاحظة: المعاينة داخل ChatGPT لا تدعم تحديد الموقع
+// لذلك نستخدم موقع افتراضي (مكة) في حال فشل GPS
+
+function initApp(lat, lng) {
+  const map = L.map('map').setView([lat, lng], 4);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  let marker = L.marker([lat, lng]).addTo(map).bindPopup('📍 الموقع المختار').openPopup();
+
+  // خط اتجاه القبلة (ذهبي مع سهم)
+  let qiblaLine = L.polyline([[lat, lng], [KAABA_LAT, KAABA_LNG]], {
+    color: '#d4af37',
+    weight: 4
+  }).addTo(map);
+
+  let qiblaArrowMap = L.polylineDecorator(qiblaLine, {
+    patterns: [
+      {
+        offset: '90%',
+        repeat: 0,
+        symbol: L.Symbol.arrowHead({
+          pixelSize: 15,
+          polygon: true,
+          pathOptions: { color: '#d4af37', fillOpacity: 1 }
+        })
+      }
+    ]
+  }).addTo(map);
+([lat, lng]).addTo(map).bindPopup('📍 الموقع المختار').openPopup();
+
+  // خط اتجاه القبلة
+  let qiblaLine = L.polyline([[lat, lng], [KAABA_LAT, KAABA_LNG]], {
+    color: 'green',
+    weight: 3,
+    dashArray: '5,10'
+  }).addTo(map);
+([lat, lng]).addTo(map).bindPopup('📍 الموقع المختار').openPopup();
+
+  function updateAll(lat, lng) {
+    marker.setLatLng([lat, lng]);
+
+    qiblaLine.setLatLngs([[lat, lng], [KAABA_LAT, KAABA_LNG]]);
+    qiblaArrowMap.setPaths(qiblaLine);
+
+    loadPrayerTimes(lat, lng);
+
+    const qibla = calculateQibla(lat, lng);
+    document.getElementById('qibla-direction').innerText = `القبلة بزاوية ${qibla.toFixed(1)}° من الشمال`;
+    document.getElementById('qibla-arrow').style.transform = `rotate(${qibla}deg)`;
+  }° من الشمال`;
+    document.getElementById('qibla-arrow').style.transform = `rotate(${qibla}deg)`;
+  }° من الشمال`;
+    document.getElementById('qibla-arrow').style.transform = `rotate(${qibla}deg)`;
+  }
+
+  updateAll(lat, lng);
+
+  // عند الضغط على أي مكان في الخريطة
+  map.on('click', function (e) {
+    const newLat = e.latlng.lat;
+    const newLng = e.latlng.lng;
+    updateAll(newLat, newLng);
+  });
+}
+
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    pos => initApp(pos.coords.latitude, pos.coords.longitude),
+    () => initApp(21.4225, 39.8262) // مكة افتراضيًا
+  );
+} else {
+  initApp(21.4225, 39.8262);
+}
+</script>
+
+</body>
+</html>
+{
+  "name": "مواقيت الصلاة واتجاه القبلة",
+  "short_name": "مواقيت الصلاة",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#1e7f5c",
+  "theme_color": "#1e7f5c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e7f5c">
+{
+  "name": "مواقيت الصلاة واتجاه القبلة",
+  "short_name": "القبلة",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#1e7f5c",
+  "theme_color": "#1e7f5c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+index.html
+manifest.json
+icon-192.png
+icon-512.png
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e7f5c">
+

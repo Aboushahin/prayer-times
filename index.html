@@ -204,14 +204,16 @@
   }
 
   function initApp(lat, lng) {
-    const map = L.map('map').setView([lat, lng], 4);
+    const map = L.map('map').setView([lat, lng], 12);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    let marker = L.marker([lat, lng]).addTo(map).bindPopup('📍 الموقع المختار');
+    // marker قابل للسحب الآن
+    let marker = L.marker([lat, lng], { draggable: true }).addTo(map).bindPopup('📍 الموقع المختار');
 
+    // خط القبلة
     let qiblaLine = L.polyline([[lat, lng], [KAABA_LAT, KAABA_LNG]], {
       color: '#d4af37',
       weight: 4
@@ -232,11 +234,13 @@
     }).addTo(map);
 
     function updateAll(nlat, nlng, placeLabel) {
+      // حرّك الماركر
       marker.setLatLng([nlat, nlng]);
 
+      // حدّث خط القبلة
       qiblaLine.setLatLngs([[nlat, nlng], [KAABA_LAT, KAABA_LNG]]);
 
-      // update decorator
+      // حدّث الديكوريتر (السهم في نهاية الخط)
       if (qiblaDecorator) map.removeLayer(qiblaDecorator);
       qiblaDecorator = L.polylineDecorator(qiblaLine, {
         patterns: [
@@ -244,20 +248,18 @@
         ]
       }).addTo(map);
 
-      // load times and update both the table and the marker popup
+      // جلب مواقيت الصلاة وتحديث الجدول والبانر
       loadPrayerTimes(nlat, nlng).then(times => {
         if (times) {
-          // update side table
           const table = document.getElementById('prayer-times');
           table.innerHTML = '<tr><th>الصلاة</th><th>الوقت</th></tr>';
-          const prayers = { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العش��ء' };
+          const prayers = { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' };
           for (const key in prayers) {
             const row = document.createElement('tr');
             row.innerHTML = `<td>${prayers[key]}</td><td>${times[key]}</td>`;
             table.appendChild(row);
           }
 
-          // popup html and open it
           const popupHtml = getPrayerTimesHTML(times, placeLabel);
           marker.bindPopup(popupHtml).openPopup();
         } else {
@@ -270,15 +272,25 @@
       document.getElementById('qibla-arrow').style.transform = `rotate(${qibla}deg)`;
     }
 
+    // عند سحب الماركر (dragend) حدّث الموقع
+    marker.on('dragend', function (e) {
+      const pos = e.target.getLatLng();
+      updateAll(pos.lat, pos.lng, `(${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`);
+      // مركز الخريطة للموقع الجديد (اختياري)
+      map.panTo([pos.lat, pos.lng]);
+    });
+
     // initial load
     updateAll(lat, lng, 'موقعك الحالي');
 
-    // عند الضغط على أي مكان في الخريطة
+    // عند الضغط على الخريطة حرّك الماركر للمكان الذي نقرته
     map.on('click', function (e) {
       const newLat = e.latlng.lat;
       const newLng = e.latlng.lng;
       const label = `(${newLat.toFixed(4)}, ${newLng.toFixed(4)})`;
       updateAll(newLat, newLng, label);
+      // مركز الخريطة للموقع الجديد (اختياري)
+      map.panTo([newLat, newLng]);
     });
   }
 

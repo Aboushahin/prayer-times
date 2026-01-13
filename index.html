@@ -108,6 +108,12 @@
       color: #777;
       margin-top: 1rem;
     }
+
+    /* popup styling */
+    .prayer-popup { direction: rtl; text-align: right; }
+    .prayer-popup h3 { margin: 0 0 6px 0; font-size: 1rem; color: #1e7f5c; }
+    .prayer-list { list-style: none; padding: 0; margin: 0; }
+    .prayer-list li { padding: 2px 0; }
   </style>
 </head>
 <body>
@@ -159,29 +165,42 @@
     return (toDeg(brng) + 360) % 360;
   }
 
+  function getPrayerTimesHTML(timesObj, placeName) {
+    // timesObj expected to have keys: Fajr, Dhuhr, Asr, Maghrib, Isha
+    return `
+      <div class="prayer-popup">
+        <h3>مواقيت الصلاة${placeName ? ' - ' + placeName : ''}</h3>
+        <ul class="prayer-list">
+          <li>الفجر: ${timesObj.Fajr}</li>
+          <li>الظهر: ${timesObj.Dhuhr}</li>
+          <li>العصر: ${timesObj.Asr}</li>
+          <li>المغرب: ${timesObj.Maghrib}</li>
+          <li>العشاء: ${timesObj.Isha}</li>
+        </ul>
+      </div>
+    `;
+  }
+
   function loadPrayerTimes(lat, lng) {
     const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lng}&method=4`;
-    fetch(url)
+    return fetch(url)
       .then(res => res.json())
       .then(data => {
-        if (!data || !data.data || !data.data.timings) return;
+        if (!data || !data.data || !data.data.timings) return null;
         const times = data.data.timings;
-        const table = document.getElementById('prayer-times');
-        table.innerHTML = '<tr><th>الصلاة</th><th>الوقت</th></tr>';
-        const prayers = {
-          Fajr: 'الفجر',
-          Dhuhr: 'الظهر',
-          Asr: 'العصر',
-          Maghrib: 'المغرب',
-          Isha: 'العشاء'
+        // return only needed keys
+        return {
+          Fajr: times.Fajr,
+          Dhuhr: times.Dhuhr,
+          Asr: times.Asr,
+          Maghrib: times.Maghrib,
+          Isha: times.Isha
         };
-        for (const key in prayers) {
-          const row = document.createElement('tr');
-          row.innerHTML = `<td>${prayers[key]}</td><td>${times[key]}</td>`;
-          table.appendChild(row);
-        }
       })
-      .catch(err => console.error('Prayer times fetch error', err));
+      .catch(err => {
+        console.error('Prayer times fetch error', err);
+        return null;
+      });
   }
 
   function initApp(lat, lng) {
@@ -212,12 +231,12 @@
       ]
     }).addTo(map);
 
-    function updateAll(nlat, nlng) {
+    function updateAll(nlat, nlng, placeLabel) {
       marker.setLatLng([nlat, nlng]);
 
       qiblaLine.setLatLngs([[nlat, nlng], [KAABA_LAT, KAABA_LNG]]);
 
-      // update decorator paths: easiest is to remove and recreate
+      // update decorator
       if (qiblaDecorator) map.removeLayer(qiblaDecorator);
       qiblaDecorator = L.polylineDecorator(qiblaLine, {
         patterns: [
@@ -225,19 +244,41 @@
         ]
       }).addTo(map);
 
-      loadPrayerTimes(nlat, nlng);
+      // load times and update both the table and the marker popup
+      loadPrayerTimes(nlat, nlng).then(times => {
+        if (times) {
+          // update side table
+          const table = document.getElementById('prayer-times');
+          table.innerHTML = '<tr><th>الصلاة</th><th>الوقت</th></tr>';
+          const prayers = { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العش��ء' };
+          for (const key in prayers) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${prayers[key]}</td><td>${times[key]}</td>`;
+            table.appendChild(row);
+          }
+
+          // popup html and open it
+          const popupHtml = getPrayerTimesHTML(times, placeLabel);
+          marker.bindPopup(popupHtml).openPopup();
+        } else {
+          marker.bindPopup('تعذر الحصول على مواقيت الصلاة').openPopup();
+        }
+      });
 
       const qibla = calculateQibla(nlat, nlng);
       document.getElementById('qibla-direction').innerText = `القبلة بزاوية ${qibla.toFixed(1)}° من الشمال`;
       document.getElementById('qibla-arrow').style.transform = `rotate(${qibla}deg)`;
     }
 
-    updateAll(lat, lng);
+    // initial load
+    updateAll(lat, lng, 'موقعك الحالي');
 
+    // عند الضغط على أي مكان في الخريطة
     map.on('click', function (e) {
       const newLat = e.latlng.lat;
       const newLng = e.latlng.lng;
-      updateAll(newLat, newLng);
+      const label = `(${newLat.toFixed(4)}, ${newLng.toFixed(4)})`;
+      updateAll(newLat, newLng, label);
     });
   }
 
